@@ -1,4 +1,5 @@
 import mongoose, { Schema, type InferSchemaType, type Model } from "mongoose";
+import { dropModelInDev } from "../db";
 
 const schema = new Schema(
   {
@@ -26,5 +27,6 @@ const schema = new Schema(
 );
 
 export type PlayerDoc = InferSchemaType<typeof schema>;
+dropModelInDev("Player");
 export const Player: Model<PlayerDoc> =
   mongoose.models.Player ?? mongoose.model("Player", schema);

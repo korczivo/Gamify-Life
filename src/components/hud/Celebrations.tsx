@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { formatMinutes } from "@/lib/economy";
 
 export interface CelebrationPayload {
   cashDelta?: number;
@@ -21,6 +22,13 @@ export interface CelebrationPayload {
   eliteAchieved?: boolean;
   /** Red error toast (e.g. "Not enough cash"). */
   error?: string;
+  /** A completed mission ticked a prep of the active heist. */
+  heistTick?: {
+    prepName: string;
+    progress: number;
+    target: number;
+    prepCompleted: boolean;
+  };
 }
 
 const CelebrationContext = createContext<(p: CelebrationPayload) => void>(() => {});
@@ -42,6 +50,7 @@ export function CelebrationProvider({ children }: { children: ReactNode }) {
   );
   const [rankUp, setRankUp] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [prepTick, setPrepTick] = useState<CelebrationPayload["heistTick"] | null>(null);
   const nextId = useRef(1);
 
   const celebrate = useCallback((p: CelebrationPayload) => {
@@ -58,6 +67,10 @@ export function CelebrationProvider({ children }: { children: ReactNode }) {
     if (p.missionPassed && p.missionName) {
       setPassed({ name: p.missionName, cash: p.cashDelta ?? 0, elite: p.eliteAchieved });
       setTimeout(() => setPassed(null), 2700);
+    }
+    if (p.heistTick) {
+      setPrepTick(p.heistTick);
+      setTimeout(() => setPrepTick(null), 2600);
     }
     if (p.rankUp && p.newRank) {
       // Let MISSION PASSED play first, then the rank-up.
@@ -98,6 +111,23 @@ export function CelebrationProvider({ children }: { children: ReactNode }) {
         ))}
       </div>
 
+      {/* heist prep tick toast */}
+      {prepTick && (
+        <div className="pointer-events-none fixed bottom-8 left-1/2 z-50 -translate-x-1/2">
+          <div className="hud-label animate-mission-passed rounded border border-gold/50 bg-panel px-4 py-2 text-sm shadow-lg">
+            <span className="text-muted">HEIST PREP · </span>
+            <span className="display-font text-base text-gold">{prepTick.prepName}</span>{" "}
+            {prepTick.prepCompleted ? (
+              <span className="font-bold text-cash">READY ✓</span>
+            ) : (
+              <span className="text-white/80">
+                {formatMinutes(prepTick.progress)} / {formatMinutes(prepTick.target)}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* error toast */}
       {errorMsg && (
         <div className="pointer-events-none fixed left-1/2 top-20 z-50 -translate-x-1/2">
@@ -131,7 +161,7 @@ export function CelebrationProvider({ children }: { children: ReactNode }) {
       {rankUp !== null && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="animate-mission-passed text-center">
-            <div className="hud-label text-xl text-rp">You've reached</div>
+            <div className="hud-label text-xl text-rp">You&apos;ve reached</div>
             <div className="display-font text-8xl text-rp drop-shadow-[0_0_24px_rgba(84,199,252,0.7)]">
               Rank {rankUp}
             </div>

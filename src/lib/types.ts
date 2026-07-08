@@ -35,6 +35,7 @@ export interface SerializedTemplate {
 export interface SerializedHeist {
   _id: string;
   name: string;
+  templateId?: string;
   tier: "small" | "medium" | "big" | "cayo";
   status: "scoping" | "active" | "completed" | "archived";
   buyIn: number;
@@ -42,8 +43,17 @@ export interface SerializedHeist {
   loot?: { kind?: string; multiplier?: number };
   preps: {
     _id: string;
-    missionId: string;
+    /** Legacy model: prep was its own one-off mission. */
+    missionId?: string;
     name: string;
+    flavor?: string;
+    /** Time-gate model: prep is a deep-work block run by its own timer. */
+    requirement?: "marketing" | "content" | "dev" | "admin" | "deepwork";
+    /** Deep-work minutes demanded / banked. */
+    target?: number;
+    progress?: number;
+    /** ISO date when a live timer is running on this prep (else absent). */
+    runningSince?: string | null;
     kind: "mandatory" | "optional";
     completed: boolean;
   }[];
@@ -58,12 +68,11 @@ export interface SerializedHeist {
 export interface SerializedOwnedAsset {
   _id: string;
   assetId: string;
-  class: "business" | "property" | "vehicle" | "gear";
+  class: "business" | "property" | "gear";
   purchasePrice: number;
   supplyUnits: number;
   stockUnits: number;
   upgrades: string[];
   totalEarned: number;
-  isDailyDriver: boolean;
   createdAt: string;
 }

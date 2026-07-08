@@ -7,7 +7,6 @@ import {
   buyUpgrade,
   collectSafe,
   sellStock,
-  setDailyDriver,
   setPinnedGoal,
   type CompletionResult,
 } from "@/lib/game";
@@ -47,11 +46,6 @@ export async function sellStockAction(assetId: string): Promise<CompletionResult
   const r = await sellStock(assetId);
   if (r.ok) afterMutation();
   return r;
-}
-
-export async function setDailyDriverAction(assetId: string): Promise<void> {
-  await setDailyDriver(assetId);
-  afterMutation();
 }
 
 export async function setPinnedGoalAction(assetId: string | null): Promise<void> {

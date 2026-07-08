@@ -1,4 +1,5 @@
 import mongoose, { Schema, type InferSchemaType, type Model } from "mongoose";
+import { dropModelInDev } from "../db";
 
 const schema = new Schema(
   {
@@ -13,5 +14,6 @@ const schema = new Schema(
 );
 
 export type ActivityDayDoc = InferSchemaType<typeof schema>;
+dropModelInDev("ActivityDay");
 export const ActivityDay: Model<ActivityDayDoc> =
   mongoose.models.ActivityDay ?? mongoose.model("ActivityDay", schema);

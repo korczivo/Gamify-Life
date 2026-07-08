@@ -4,10 +4,11 @@ import { dbConnect } from "@/lib/db";
 import { serialize } from "@/lib/game";
 import { Heist } from "@/lib/models/Heist";
 import { OwnedAsset } from "@/lib/models/OwnedAsset";
-import { HEIST_TIERS } from "@/lib/economy";
+import { HEIST_TIERS, HEIST_TEMPLATES } from "@/lib/economy";
 import type { SerializedHeist } from "@/lib/types";
 import { HeistCreator } from "@/components/heists/HeistCreator";
 import { weekKey } from "@/lib/dates";
+import { assetArt } from "@/lib/art";
 
 export const metadata: Metadata = { title: "Heists — EMPIRE" };
 export const dynamic = "force-dynamic";
@@ -21,14 +22,30 @@ export default async function HeistsPage() {
   const sHeists = serialize<SerializedHeist[]>(heists);
   const active = sHeists.find((h) => h.status === "scoping" || h.status === "active");
   const past = sHeists.filter((h) => h.status === "completed" || h.status === "archived");
+  const templateArt = Object.fromEntries(
+    HEIST_TEMPLATES.map((t) => [t.id, assetArt(t.id)])
+  );
+  const activeArt = active?.templateId ? assetArt(active.templateId) : null;
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6">
       {active ? (
         <Link
           href={`/heists/${active._id}`}
-          className="block rounded border border-gold/50 bg-panel p-5 hover:bg-panel-2"
+          className="relative block overflow-hidden rounded border border-gold/50 bg-panel p-5 hover:bg-panel-2"
         >
+          {activeArt && (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={activeArt}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover object-top opacity-25"
+              />
+              <div className="absolute inset-0 bg-gradient-to-r from-panel via-panel/80 to-transparent" />
+            </>
+          )}
+          <div className="relative">
           <div className="hud-label text-xs text-gold">
             Active heist · {HEIST_TIERS[active.tier].label} · {weekKey(new Date(active.createdAt))}
             {active.hardMode && " · 💀 HARD"}
@@ -50,13 +67,22 @@ export default async function HeistsPage() {
             {active.preps.filter((p) => p.completed).length}/{active.preps.length} preps —
             open the planning board →
           </div>
+          </div>
         </Link>
       ) : (
-        <HeistCreator ownedAssetIds={owned.map((o) => o.assetId)} disabled={false} />
+        <HeistCreator
+          ownedAssetIds={owned.map((o) => o.assetId)}
+          templateArt={templateArt}
+          disabled={false}
+        />
       )}
 
       {active && (
-        <HeistCreator ownedAssetIds={owned.map((o) => o.assetId)} disabled={true} />
+        <HeistCreator
+          ownedAssetIds={owned.map((o) => o.assetId)}
+          templateArt={templateArt}
+          disabled={true}
+        />
       )}
 
       {past.length > 0 && (

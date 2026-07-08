@@ -1,7 +1,6 @@
 import { getPlayer } from "@/lib/game";
 import { rpForRank } from "@/lib/economy";
 import { CashCounter } from "./CashCounter";
-import { HudTimer } from "./HudTimer";
 
 export async function HudBar() {
   const player = await getPlayer();
@@ -30,10 +29,6 @@ export async function HudBar() {
         >
           RANK {player.rank}
         </span>
-      </div>
-
-      <div className="ml-auto flex items-center gap-4">
-        <HudTimer />
       </div>
     </header>
   );

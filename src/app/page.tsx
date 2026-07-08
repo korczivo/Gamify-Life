@@ -3,7 +3,6 @@ import { ensurePeriodMissions, getPlayer, serialize } from "@/lib/game";
 import { dbConnect } from "@/lib/db";
 import { Mission } from "@/lib/models/Mission";
 import { Heist } from "@/lib/models/Heist";
-import { OwnedAsset } from "@/lib/models/OwnedAsset";
 import { LedgerEntry } from "@/lib/models/LedgerEntry";
 import { ActivityDay } from "@/lib/models/ActivityDay";
 import { dayKey, weekKey } from "@/lib/dates";
@@ -13,8 +12,6 @@ import { MissionCard } from "@/components/missions/MissionCard";
 import { SafeCard } from "@/components/hud/SafeCard";
 import { NetWorthChart } from "@/components/charts/NetWorthChart";
 import { buildNetWorthSeries } from "@/lib/networth";
-import { assetArt } from "@/lib/art";
-import Image from "next/image";
 
 export const dynamic = "force-dynamic";
 
@@ -24,14 +21,13 @@ export default async function Dashboard() {
 
   const dk = dayKey();
   const wk = weekKey();
-  const [player, todayMissions, weekOpen, prepsOpen, activeHeist, owned, lastEntry, activity] =
+  const [player, todayMissions, weekOpen, prepsOpen, activeHeist, lastEntry, activity] =
     await Promise.all([
       getPlayer(),
       Mission.find({ periodKey: dk, heistId: null }).sort({ status: 1, createdAt: 1 }).lean(),
       Mission.find({ periodKey: wk, status: "open" }).lean(),
       Mission.find({ heistId: { $ne: null }, status: "open" }).lean(),
       Heist.findOne({ status: { $in: ["scoping", "active"] } }).lean(),
-      OwnedAsset.find({}).lean(),
       LedgerEntry.findOne({}).sort({ createdAt: -1 }).lean(),
       ActivityDay.findOne({ dayKey: dayKey() }).lean(),
     ]);
@@ -41,9 +37,6 @@ export default async function Dashboard() {
   const sToday = serialize<SerializedMission[]>(todayMissions);
   const openToday = sToday.filter((m) => m.status === "open");
   const doneToday = sToday.length - openToday.length;
-
-  const dailyDriver = owned.find((o) => o.isDailyDriver);
-  const driverDef = dailyDriver ? assetById(dailyDriver.assetId) : null;
 
   const pinnedDef = player.pinnedGoalAssetId ? assetById(player.pinnedGoalAssetId) : null;
   const pinnedProgress = pinnedDef ? Math.min(1, player.cash / pinnedDef.price) : 0;
@@ -162,29 +155,6 @@ export default async function Dashboard() {
             <div className="hud-label mb-1 text-xs text-muted">Net worth</div>
             <NetWorthChart series={nwSeries} height={120} compactMode />
           </div>
-
-          {driverDef && (
-            <div className="overflow-hidden rounded border border-line bg-panel">
-              {assetArt(driverDef.id) ? (
-                <div className="relative h-36 bg-panel-2">
-                  <Image
-                    src={assetArt(driverDef.id)!}
-                    alt={driverDef.name}
-                    fill
-                    className="object-cover"
-                    sizes="400px"
-                  />
-                </div>
-              ) : null}
-              <div className="p-4">
-                <div className="hud-label text-xs text-muted">Daily driver</div>
-                <div className="mt-0.5 flex items-baseline justify-between gap-2">
-                  <span className="font-medium">{driverDef.name}</span>
-                  <span className="hud-label text-xs text-muted">{driverDef.vehicleClass}</span>
-                </div>
-              </div>
-            </div>
-          )}
         </aside>
       </div>
     </div>

@@ -4,7 +4,6 @@ import { useState, useTransition } from "react";
 import type { SerializedMission } from "@/lib/types";
 import { completeMissionAction, incrementProgressAction } from "@/actions/missions";
 import { useCelebration } from "@/components/hud/Celebrations";
-import { readTimer, startTimer } from "@/components/hud/HudTimer";
 
 function tick() {
   try {
@@ -46,16 +45,6 @@ export function MissionControls({ mission }: { mission: SerializedMission }) {
       }
     });
 
-  const onStartTimer = () => {
-    if (readTimer()) return; // one session at a time
-    startTimer({
-      missionId: mission._id,
-      name: mission.name,
-      durationMinutes: mission.durationMinutes ?? 45,
-      endsAt: Date.now() + (mission.durationMinutes ?? 45) * 60_000,
-    });
-  };
-
   if (mission.objectiveType === "counter") {
     const target = mission.targetCount ?? 1;
     const progress = Math.max(mission.progress, optimisticProgress);
@@ -80,18 +69,6 @@ export function MissionControls({ mission }: { mission: SerializedMission }) {
           +1
         </button>
       </div>
-    );
-  }
-
-  if (mission.objectiveType === "timer") {
-    return (
-      <button
-        onClick={onStartTimer}
-        disabled={pending}
-        className="hud-label rounded border border-gold/50 bg-gold/10 px-4 py-2 text-sm font-bold text-gold hover:bg-gold/20 disabled:opacity-50"
-      >
-        ▶ Start
-      </button>
     );
   }
 

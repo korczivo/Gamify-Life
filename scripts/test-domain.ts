@@ -153,15 +153,6 @@ async function main() {
     hardPay
   );
 
-  console.log("vehicles & slots:");
-  res = await game.buyAsset("faggio");
-  check("no garage -> cannot buy vehicle", !res.ok, res);
-  await game.buyAsset("low-end-apartment");
-  res = await game.buyAsset("faggio");
-  check("vehicle after apartment", res.ok, res);
-  const faggio = (await OwnedAsset.findOne({ assetId: "faggio" }))!;
-  check("first vehicle becomes daily driver", faggio.isDailyDriver === true, faggio);
-
   console.log("safe:");
   player = await game.getPlayer();
   player.safeBalance = 12_345;
@@ -175,35 +166,72 @@ async function main() {
     tier: "small",
     finaleName: "PUBLISH",
     preps: [
-      { name: "Script", kind: "mandatory" },
-      { name: "Record", kind: "mandatory" },
-      { name: "3 thumbnails", kind: "optional" },
+      { name: "Script", kind: "mandatory", requirement: "deepwork", target: 1 },
+      { name: "Outreach", kind: "mandatory", requirement: "marketing", target: 2 },
+      { name: "Extra polish", kind: "optional", requirement: "marketing", target: 1 },
     ],
   });
   check("heist starts", start.ok, start);
   const heistId = start.heistId!;
   const heist = (await Heist.findById(heistId))!;
   check("buy-in 10% of 200k", heist.buyIn === 20_000, heist.buyIn);
-  check("not hard mode (no prior heist)", heist.hardMode === false, heist.hardMode);
+  check(
+    "no prep missions created",
+    (await Mission.countDocuments({ heistId })) === 0,
+    await Mission.countDocuments({ heistId })
+  );
+  check(
+    "starts active with loot rolled",
+    heist.status === "active" && Boolean(heist.loot?.kind) && Boolean(start.loot?.kind),
+    { status: heist.status, loot: heist.loot }
+  );
 
   let fin = await game.finishHeist(heistId);
-  check("cannot finale while scoping", !fin.ok, fin);
-
-  const scope = await game.scopeHeist(heistId);
-  check("scope rolls loot", scope.ok && Boolean(scope.loot?.kind), scope);
-
-  fin = await game.finishHeist(heistId);
   check("cannot finale with mandatory preps open", !fin.ok, fin);
 
-  const prepMissions = await Mission.find({ heistId, prepKind: "mandatory" });
-  for (const p of prepMissions) {
-    const pr = await game.completeMission(String(p._id));
-    check(`prep pays flat ($5k): ${p.name}`, pr.ok && pr.cashDelta === 5_000 && pr.prepCompleted === true, pr);
-  }
+  const mk = (name: string, businessType: "marketing" | "content" | "dev", timer = false) =>
+    game.addOneOffMission({
+      name,
+      businessType,
+      objectiveType: timer ? "timer" : "checkbox",
+      difficulty: "easy",
+      durationMinutes: timer ? 45 : undefined,
+    });
+
+  const r1 = await game.completeMission(await mk("DM batch 1", "marketing"));
+  check(
+    "marketing mission ticks mandatory prep first",
+    r1.heistTick?.prepName === "Outreach" && r1.heistTick?.progress === 1,
+    r1.heistTick
+  );
+
+  const rd = await game.completeMission(await mk("Refactor", "dev"));
+  check("non-matching mission doesn't tick", rd.ok && rd.heistTick === undefined, rd.heistTick);
+
+  const r2 = await game.completeMission(await mk("DM batch 2", "marketing"));
+  check(
+    "prep completes at target",
+    r2.heistTick?.prepName === "Outreach" && r2.heistTick?.prepCompleted === true,
+    r2.heistTick
+  );
+
+  const rt = await game.completeMission(await mk("Focus block", "dev", true));
+  check(
+    "timer mission ticks deepwork prep",
+    rt.heistTick?.prepName === "Script" && rt.heistTick?.prepCompleted === true,
+    rt.heistTick
+  );
+
+  const r3 = await game.completeMission(await mk("DM batch 3", "marketing"));
+  check(
+    "overflow ticks optional prep",
+    r3.heistTick?.prepName === "Extra polish" && r3.heistTick?.prepCompleted === true,
+    r3.heistTick
+  );
 
   const cashBefore = (await game.getPlayer()).cash;
   fin = await game.finishHeist(heistId);
-  const expectedMin = Math.round(200_000 * (scope.loot!.multiplier));
+  const expectedMin = Math.round(200_000 * (start.loot!.multiplier));
   check("finale pays >= base*loot", fin.ok && (fin.cashDelta ?? 0) >= expectedMin, fin);
   const after = await game.getPlayer();
   check("cash increased by payout", after.cash === cashBefore + (fin.cashDelta ?? 0), after.cash);
@@ -212,10 +240,10 @@ async function main() {
     name: "Next",
     tier: "small",
     finaleName: "GO",
-    preps: [{ name: "P", kind: "mandatory" }],
+    preps: [{ name: "P", kind: "mandatory", requirement: "marketing", target: 1 }],
   });
   const heist2 = (await Heist.findById(start2.heistId!))!;
-  check("hard mode within 24h of last finale", heist2.hardMode === true, heist2.hardMode);
+  check("hard mode is retired", heist2.hardMode === false, heist2.hardMode);
 
   const ledger = await LedgerEntry.find({}).sort({ createdAt: 1 }).lean();
   check("ledger has entries", ledger.length > 8, ledger.length);

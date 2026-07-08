@@ -1,5 +1,5 @@
 import type { SerializedMission } from "@/lib/types";
-import { hardSaturationMult, TIMER_PREMIUM } from "@/lib/economy";
+import { hardSaturationMult } from "@/lib/economy";
 import { MissionControls } from "./MissionControls";
 
 const TYPE_STYLE: Record<SerializedMission["businessType"], { label: string; cls: string }> = {
@@ -56,15 +56,6 @@ export function MissionCard({
           <span className="text-rp">
             {Math.round(mission.rpReward * saturation).toLocaleString("en-US")} RP
           </span>
-          {mission.objectiveType === "timer" && (
-            <>
-              <span className="mx-1.5">·</span>
-              {mission.durationMinutes} min
-              <span className="ml-1.5 text-cash">
-                +{Math.round((TIMER_PREMIUM - 1) * 100)}% verified
-              </span>
-            </>
-          )}
           {!done && isHard && saturation < 1 && (
             <span className="ml-1.5 text-gold">
               market saturated · {Math.round(saturation * 100)}%

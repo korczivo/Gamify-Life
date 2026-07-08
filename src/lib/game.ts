@@ -6,21 +6,18 @@
 import { dbConnect } from "./db";
 import { dayKey, weekKey, hoursBetween } from "./dates";
 import {
-  ASSET_CATALOG,
   assetById,
   DIFFICULTY,
   EQUIPMENT_VALUE_MULT,
+  ELITE_WINDOW_DAYS,
   FULLNESS_BONUS_MAX,
-  HARD_MODE_WINDOW_HOURS,
   hardSaturationMult,
-  TIMER_PREMIUM,
   HEIST_BUYIN_PCT,
   HEIST_RP_DIVISOR,
   HEIST_TIERS,
   heistPayout,
   NIGHTCLUB_ACCRUAL_PER_BUSINESS,
   OFFICE_SALE_BONUS,
-  PREP_PAYOUT,
   PRODUCTION_PER_TICK,
   rankFromRp,
   RESIDUAL_CAP_BASE,
@@ -29,6 +26,7 @@ import {
   RESIDUAL_PER_MISSION_WITH_AGENCY,
   rollLoot,
   SAFE_CAP,
+  type PrepRequirement,
   skillBonus,
   skillLevel,
   STAFF_PRODUCTION_MULT,
@@ -61,6 +59,13 @@ export interface CompletionResult {
   completed?: boolean; // false when a counter mission just incremented
   progress?: number;
   eliteAchieved?: boolean;
+  /** Set when this mission ticked a prep of the active heist. */
+  heistTick?: {
+    prepName: string;
+    progress: number;
+    target: number;
+    prepCompleted: boolean;
+  };
 }
 
 /** Strip Mongoose internals: ObjectIds/Dates -> strings, plain JSON. */
@@ -125,19 +130,14 @@ async function appendLedger(opts: {
 type SkillMap = Record<string, number>;
 
 /**
- * Payout bonus from earned skills: the mission's businessType skill, plus
- * Focus for timer missions. Milestones at level 30/60/90.
+ * Payout bonus from the mission's businessType skill. Milestones at 30/60/90.
+ * (Focus is earned from heist deep-work now, not missions.)
  */
 function skillMultiplier(
   skills: SkillMap | undefined,
-  businessType: BusinessType,
-  objectiveType: ObjectiveType
+  businessType: BusinessType
 ): number {
-  let bonus = skillBonus(skillLevel(skills?.[businessType] ?? 0));
-  if (objectiveType === "timer") {
-    bonus += skillBonus(skillLevel(skills?.focus ?? 0));
-  }
-  return 1 + bonus;
+  return 1 + skillBonus(skillLevel(skills?.[businessType] ?? 0));
 }
 
 // ---------------------------------------------------------------- missions
@@ -254,15 +254,10 @@ export async function completeMission(missionId: string): Promise<CompletionResu
   const dk = dayKey();
   const mult = skillMultiplier(
     player.skills as unknown as SkillMap,
-    mission.businessType as BusinessType,
-    mission.objectiveType as ObjectiveType
+    mission.businessType as BusinessType
   );
   let cashMult = mult;
   let rpMult = mult;
-  if (mission.objectiveType === "timer") {
-    cashMult *= TIMER_PREMIUM;
-    rpMult *= TIMER_PREMIUM;
-  }
   const isHard = mission.difficulty === "hard" && !mission.heistId;
   if (isHard) {
     const activity = await ActivityDay.findOne({ dayKey: dk }).lean();
@@ -278,12 +273,9 @@ export async function completeMission(missionId: string): Promise<CompletionResu
   player.totalRp += rpDelta;
   player.rank = rankFromRp(player.totalRp);
 
-  // --- skill growth (work is the only source)
+  // --- skill growth: the mission's businessType (Focus grows from heists)
   const skills = player.skills as unknown as SkillMap;
   skills[mission.businessType] = (skills[mission.businessType] ?? 0) + mission.tickWeight;
-  if (mission.objectiveType === "timer") {
-    skills.focus = (skills.focus ?? 0) + (mission.durationMinutes ?? 0) / 45;
-  }
   player.markModified("skills");
 
   // --- residuals (Agency doubles rate and cap)
@@ -314,8 +306,15 @@ export async function completeMission(missionId: string): Promise<CompletionResu
   // --- production tick across the whole empire
   await tickProduction(mission.tickWeight, owned, target ? String(target._id) : null);
 
-  // --- heist prep
+  // --- heist prep progress
+  //
+  // Heists are NOT fed by missions anymore. A heist is a deep-work TIME gate:
+  // each prep has its own timer you sit through on the heist board (see
+  // startPrepTimer/stopPrepTimer). Missions are discrete, checkable work —
+  // they pay cash/RP/skills/supply but never move a heist. The only exception
+  // is the legacy model where a prep WAS its own one-off mission.
   let prepCompleted = false;
+  const heistTick: CompletionResult["heistTick"] = undefined;
   if (mission.heistId) {
     const res = await Heist.updateOne(
       { _id: mission.heistId, "preps.missionId": mission._id },
@@ -338,8 +337,6 @@ export async function completeMission(missionId: string): Promise<CompletionResu
         hardCompleted: isHard ? 1 : 0,
         cashEarned: cashDelta,
         rpEarned: rpDelta,
-        deepWorkMinutes:
-          mission.objectiveType === "timer" ? mission.durationMinutes ?? 0 : 0,
       },
     },
     { upsert: true }
@@ -365,6 +362,7 @@ export async function completeMission(missionId: string): Promise<CompletionResu
     rankUp: player.rank > prevRank,
     newRank: player.rank,
     prepCompleted,
+    heistTick,
   };
 }
 
@@ -498,20 +496,6 @@ export async function sellStock(assetId: string): Promise<CompletionResult> {
   return { ok: true, cashDelta: value };
 }
 
-export function garageCapacity(ownedIds: Set<string>): {
-  garage: number;
-  aircraft: number;
-} {
-  let garage = 0;
-  let aircraft = 0;
-  for (const id of ownedIds) {
-    const def = assetById(id);
-    garage += def.garageSlots ?? 0;
-    aircraft += def.aircraftSlots ?? 0;
-  }
-  return { garage, aircraft };
-}
-
 export async function buyAsset(assetId: string): Promise<CompletionResult> {
   await dbConnect();
   const def = assetById(assetId);
@@ -525,7 +509,6 @@ export async function buyAsset(assetId: string): Promise<CompletionResult> {
   }
 
   const owned = await OwnedAsset.find({}).lean();
-  const ownedIds = new Set(owned.map((o) => o.assetId));
 
   if (def.requiresBusinessCount) {
     const count = owned.filter((o) => assetById(o.assetId).class === "business").length;
@@ -534,35 +517,13 @@ export async function buyAsset(assetId: string): Promise<CompletionResult> {
     }
   }
 
-  if (def.class === "vehicle") {
-    const capacity = garageCapacity(ownedIds);
-    const vehicles = owned.filter((o) => assetById(o.assetId).class === "vehicle");
-    const isAircraft = def.vehicleClass === "Aircraft";
-    const used = vehicles.filter(
-      (o) => (assetById(o.assetId).vehicleClass === "Aircraft") === isAircraft
-    ).length;
-    const max = isAircraft ? capacity.aircraft : capacity.garage;
-    if (used >= max) {
-      return {
-        ok: false,
-        error: isAircraft
-          ? "No hangar space — buy a hangar"
-          : "No garage space — buy a property with slots",
-      };
-    }
-  }
-
   player.cash -= def.price;
-  const isFirstVehicle =
-    def.class === "vehicle" &&
-    !owned.some((o) => assetById(o.assetId).class === "vehicle");
   await OwnedAsset.create({
     assetId,
     class: def.class,
     purchasePrice: def.price,
     supplyUnits: 0,
     stockUnits: 0,
-    isDailyDriver: isFirstVehicle,
   });
   await player.save();
   await appendLedger({
@@ -628,15 +589,6 @@ export async function collectSafe(): Promise<CompletionResult> {
   return { ok: true, cashDelta: amount };
 }
 
-export async function setDailyDriver(assetId: string): Promise<void> {
-  await dbConnect();
-  await OwnedAsset.updateMany({ class: "vehicle" }, { $set: { isDailyDriver: false } });
-  await OwnedAsset.updateOne(
-    { assetId, class: "vehicle" },
-    { $set: { isDailyDriver: true } }
-  );
-}
-
 export async function setPinnedGoal(assetId: string | null): Promise<void> {
   await dbConnect();
   const player = await getPlayer();
@@ -648,10 +600,22 @@ export async function setPinnedGoal(assetId: string | null): Promise<void> {
 
 export async function startHeist(input: {
   name: string;
+  templateId?: string;
   tier: HeistTier;
   finaleName: string;
-  preps: { name: string; kind: "mandatory" | "optional" }[];
-}): Promise<{ ok: boolean; error?: string; heistId?: string }> {
+  preps: {
+    name: string;
+    kind: "mandatory" | "optional";
+    flavor?: string;
+    requirement: PrepRequirement;
+    target: number;
+  }[];
+}): Promise<{
+  ok: boolean;
+  error?: string;
+  heistId?: string;
+  loot?: { kind: string; multiplier: number };
+}> {
   await dbConnect();
   const tierDef = HEIST_TIERS[input.tier];
 
@@ -672,49 +636,32 @@ export async function startHeist(input: {
   const player = await getPlayer();
   if (player.cash < buyIn) return { ok: false, error: "Not enough cash for the buy-in" };
 
-  // Hard mode: re-committing within 24h of the last finale.
-  const lastDone = await Heist.findOne({ status: "completed" }).sort({ completedAt: -1 });
-  const hardMode = Boolean(
-    lastDone?.completedAt && hoursBetween(lastDone.completedAt, new Date()) <= HARD_MODE_WINDOW_HOURS
-  );
-
   player.cash -= buyIn;
+  // Scoping happens at start: the crew cases the target while you sign on,
+  // so the board opens armed — one less dead click.
+  const loot = rollLoot(input.tier, Math.random());
   const heist = await Heist.create({
     name: input.name,
+    templateId: input.templateId,
     tier: input.tier,
-    status: "scoping",
+    status: "active",
+    loot: { kind: loot.kind, multiplier: loot.multiplier },
     buyIn,
     basePayout: tierDef.basePayout,
-    preps: [],
-    finaleName: input.finaleName,
-    hardMode,
-  });
-
-  // Each prep is a real one-off mission wired to the heist.
-  const preps = [];
-  for (const prep of input.preps) {
-    const missionDoc = await Mission.create({
-      name: prep.name,
-      businessType: "admin",
-      objectiveType: "checkbox",
-      difficulty: "easy",
-      cashReward: PREP_PAYOUT.cash,
-      rpReward: PREP_PAYOUT.rp,
-      tickWeight: PREP_PAYOUT.tickWeight,
-      periodKey: dayKey(),
-      isOneOff: true,
-      heistId: heist._id,
-      prepKind: prep.kind,
-    });
-    preps.push({
-      missionId: missionDoc._id,
-      name: prep.name,
-      kind: prep.kind,
+    // Preps are counters — regular missions completed while the heist is
+    // active fill them (see completeMission). No separate prep missions.
+    preps: input.preps.map((p) => ({
+      name: p.name,
+      flavor: p.flavor,
+      requirement: p.requirement,
+      target: Math.max(1, Math.round(p.target)),
+      progress: 0,
+      kind: p.kind,
       completed: false,
-    });
-  }
-  heist.preps.push(...preps);
-  await heist.save();
+    })),
+    finaleName: input.finaleName,
+    hardMode: false,
+  });
   await player.save();
   await appendLedger({
     type: "HEIST_BUYIN",
@@ -724,32 +671,115 @@ export async function startHeist(input: {
     balanceAfter: player.cash,
     safeBalance: player.safeBalance,
   });
-  return { ok: true, heistId: String(heist._id) };
+  return {
+    ok: true,
+    heistId: String(heist._id),
+    loot: { kind: loot.kind, multiplier: loot.multiplier },
+  };
 }
 
-/** Scope out: rolls the loot and activates the board. */
-export async function scopeHeist(
-  heistId: string
-): Promise<{ ok: boolean; error?: string; loot?: { kind: string; multiplier: number } }> {
+/** Bank a running prep's elapsed minutes (capped at its target) and stop it. */
+function bankPrep(
+  prep: {
+    runningSince?: Date | null;
+    progress?: number | null;
+    target?: number | null;
+    completed?: boolean | null;
+    completedAt?: Date | null;
+  },
+  now: Date
+): number {
+  if (!prep.runningSince) return 0;
+  const elapsedMin = (now.getTime() - prep.runningSince.getTime()) / 60000;
+  const target = prep.target ?? 1;
+  // Cap at the prep's remaining need: leaving a timer running overnight can at
+  // most complete the one prep it's on, never overfill or bleed into others.
+  const add = Math.max(0, Math.min(target - (prep.progress ?? 0), elapsedMin));
+  prep.progress = (prep.progress ?? 0) + add;
+  prep.runningSince = null;
+  if ((prep.progress ?? 0) >= target) {
+    prep.completed = true;
+    prep.completedAt = now;
+  }
+  return add;
+}
+
+/**
+ * Start the deep-work timer on one prep. Only one prep runs at a time —
+ * starting a new one banks whatever was running elsewhere. The timer lives in
+ * the DB (runningSince), so it keeps counting across reloads: this is the
+ * "sit through it" time that gates the finale.
+ */
+export async function startPrepTimer(
+  heistId: string,
+  prepId: string
+): Promise<CompletionResult> {
   await dbConnect();
-  const heist = await Heist.findOne({ _id: heistId, status: "scoping" });
-  if (!heist) return { ok: false, error: "Heist not found or already scoped" };
-  const loot = rollLoot(heist.tier as HeistTier, Math.random());
-  heist.loot = { kind: loot.kind, multiplier: loot.multiplier };
-  heist.status = "active";
+  const heist = await Heist.findOne({ _id: heistId, status: "active" });
+  if (!heist) return { ok: false, error: "Heist not active" };
+  const now = new Date();
+  for (const p of heist.preps) {
+    if (p.runningSince && String(p._id) !== prepId) bankPrep(p, now);
+  }
+  const prep = heist.preps.id(prepId);
+  if (!prep) return { ok: false, error: "Prep not found" };
+  if (prep.completed) return { ok: false, error: "Prep already done" };
+  prep.runningSince = now;
   await heist.save();
-  return { ok: true, loot: { kind: loot.kind, multiplier: loot.multiplier } };
+  return { ok: true };
+}
+
+/** Pause/stop a prep's timer: bank the elapsed minutes and grow Focus. */
+export async function stopPrepTimer(
+  heistId: string,
+  prepId: string
+): Promise<CompletionResult> {
+  await dbConnect();
+  const heist = await Heist.findOne({ _id: heistId, status: "active" });
+  if (!heist) return { ok: false, error: "Heist not active" };
+  const prep = heist.preps.id(prepId);
+  if (!prep) return { ok: false, error: "Prep not found" };
+  const banked = bankPrep(prep, new Date());
+  await heist.save();
+
+  // Deep work is a heist thing now: it grows Focus and logs to the day's
+  // deep-work total (feeds /stats and /character).
+  if (banked > 0) {
+    const player = await getPlayer();
+    const skills = player.skills as unknown as SkillMap;
+    skills.focus = (skills.focus ?? 0) + banked / 45;
+    player.markModified("skills");
+    await player.save();
+    await ActivityDay.updateOne(
+      { dayKey: dayKey() },
+      { $inc: { deepWorkMinutes: banked } },
+      { upsert: true }
+    );
+  }
+
+  return {
+    ok: true,
+    prepCompleted: Boolean(prep.completed),
+    progress: prep.progress ?? 0,
+    heistTick: {
+      prepName: prep.flavor ?? prep.name,
+      progress: prep.progress ?? 0,
+      target: prep.target ?? 1,
+      prepCompleted: Boolean(prep.completed),
+    },
+  };
 }
 
 async function checkElite(heist: {
   createdAt?: Date;
+  tier: string;
   preps: { completed?: boolean | null }[];
 }): Promise<boolean> {
   const allPreps = heist.preps.every((p) => p.completed);
   if (!allPreps) return false;
   const created = heist.createdAt ?? new Date();
   const days = Math.floor(hoursBetween(created, new Date()) / 24);
-  if (days > 7) return false;
+  if (days > ELITE_WINDOW_DAYS[heist.tier as HeistTier]) return false;
   // Every day of the heist's run must have at least one completed mission.
   for (let i = 0; i <= days; i++) {
     const d = new Date(created.getTime() + i * 24 * 60 * 60 * 1000);

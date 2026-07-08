@@ -19,6 +19,19 @@ const cache: MongooseCache = globalWithMongoose.__mongoose ?? {
 };
 globalWithMongoose.__mongoose = cache;
 
+/**
+ * Dev-only: drop a compiled model so the module re-registers it below. The
+ * mongoose instance is cached across HMR reloads, so plain
+ * `mongoose.models.X ?? mongoose.model(...)` would keep serving the OLD
+ * schema after an edit — new fields get silently stripped on save.
+ * (Regex form: no throw when the model isn't registered yet.)
+ */
+export function dropModelInDev(name: string): void {
+  if (process.env.NODE_ENV !== "production") {
+    mongoose.deleteModel(new RegExp(`^${name}$`));
+  }
+}
+
 export async function dbConnect(): Promise<typeof mongoose> {
   if (cache.conn) return cache.conn;
   if (!cache.promise) {
