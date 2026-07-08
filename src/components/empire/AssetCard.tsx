@@ -65,7 +65,7 @@ export function AssetCard({
             className={locked ? "opacity-50 grayscale" : ""}
           />
         ) : (
-          <span className="text-4xl">{def.emoji ?? (def.class === "gear" ? "🕶" : "🚗")}</span>
+          <span className="text-4xl">{def.emoji ?? "🕶"}</span>
         )}
         {locked && (
           <span className="hud-label absolute right-2 top-2 rounded-sm bg-black/70 px-2 py-0.5 text-[10px] text-muted">

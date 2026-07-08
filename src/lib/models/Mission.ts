@@ -1,4 +1,5 @@
 import mongoose, { Schema, type InferSchemaType, type Model } from "mongoose";
+import { dropModelInDev } from "../db";
 
 const schema = new Schema(
   {
@@ -41,5 +42,6 @@ schema.index(
 );
 
 export type MissionDoc = InferSchemaType<typeof schema>;
+dropModelInDev("Mission");
 export const Mission: Model<MissionDoc> =
   mongoose.models.Mission ?? mongoose.model("Mission", schema);

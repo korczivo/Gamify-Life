@@ -5,6 +5,7 @@ import { serialize } from "@/lib/game";
 import { Heist } from "@/lib/models/Heist";
 import type { SerializedHeist } from "@/lib/types";
 import { HeistBoard } from "@/components/heists/HeistBoard";
+import { assetArt } from "@/lib/art";
 import mongoose from "mongoose";
 
 export const dynamic = "force-dynamic";
@@ -31,10 +32,11 @@ export default async function HeistBoardPage({
   await dbConnect();
   const heist = await Heist.findById(id).lean();
   if (!heist) notFound();
+  const art = heist.templateId ? assetArt(heist.templateId) : null;
 
   return (
     <div className="mx-auto max-w-4xl">
-      <HeistBoard heist={serialize<SerializedHeist>(heist)} />
+      <HeistBoard heist={serialize<SerializedHeist>(heist)} art={art} />
     </div>
   );
 }

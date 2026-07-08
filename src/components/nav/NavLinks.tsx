@@ -8,7 +8,6 @@ const LINKS = [
   { href: "/missions", label: "Missions" },
   { href: "/heists", label: "Heists" },
   { href: "/empire", label: "Empire" },
-  { href: "/garage", label: "Garage" },
   { href: "/character", label: "Character" },
   { href: "/stats", label: "Stats" },
 ];

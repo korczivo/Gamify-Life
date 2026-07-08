@@ -75,7 +75,6 @@ export default async function CharacterPage() {
       const cls = assetById(o.assetId).class;
       return cls === "business" || cls === "property";
     }).length,
-    collector: owned.filter((o) => assetById(o.assetId).class === "vehicle").length,
     "millionaires-club": netWorth,
     rainmaker: totalEarned,
     salesman: stockSales,

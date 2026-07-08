@@ -170,6 +170,16 @@ const ART: [string, string][] = [
   ["BuzzardAttackChopper-GTAV-front.png", "assets/vehicles/buzzard.png"],
 ];
 
+// Heist card art, keyed by HEIST_TEMPLATES id (dest filename must equal the
+// template id — src/lib/art.ts resolves art by that convention).
+const HEIST_ART: [string, string][] = [
+  ["FleecaJob-GTAO.png", "assets/heists/fleeca-job.png"],
+  ["PrisonBreak-JobImage-GTAO.jpg", "assets/heists/prison-break.jpg"],
+  ["PacificStandard-JobImage-GTAO.jpg", "assets/heists/pacific-standard.jpg"],
+  ["TheDoomsdayHeist-GTAO-Artwork.png", "assets/heists/doomsday.png"],
+  ["TheCayoPericoHeist-GTAO-Artwork.jpg", "assets/heists/cayo-perico.jpg"],
+];
+
 // game-icons.net silhouettes (CC BY 3.0) for wardrobe items and award badges.
 const GAME_ICONS: [string, string][] = [
   // wardrobe (dest name = catalog assetId)
@@ -253,6 +263,15 @@ async function main() {
 
   console.log("Artwork:");
   for (const [file, dest] of ART) {
+    try {
+      await wikiDownload(file, dest);
+    } catch (err) {
+      console.warn(`  WARN ${file}: ${(err as Error).message}`);
+    }
+  }
+
+  console.log("Heist art:");
+  for (const [file, dest] of HEIST_ART) {
     try {
       await wikiDownload(file, dest);
     } catch (err) {

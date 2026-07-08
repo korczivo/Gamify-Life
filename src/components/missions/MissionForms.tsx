@@ -22,7 +22,6 @@ export function MissionForms({ templates }: { templates: SerializedTemplate[] })
   const [objectiveType, setObjectiveType] = useState<ObjectiveType>("checkbox");
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [targetCount, setTargetCount] = useState(10);
-  const [durationMinutes, setDurationMinutes] = useState(45);
   const [schedule, setSchedule] = useState<"oneoff" | "daily" | "weekly">("oneoff");
   const [timesPerPeriod, setTimesPerPeriod] = useState(1);
 
@@ -35,7 +34,6 @@ export function MissionForms({ templates }: { templates: SerializedTemplate[] })
         objectiveType,
         difficulty,
         targetCount,
-        durationMinutes,
       };
       if (schedule === "oneoff") await addOneOffAction(base);
       else await createTemplateAction({ ...base, scheduleKind: schedule, timesPerPeriod });
@@ -87,7 +85,6 @@ export function MissionForms({ templates }: { templates: SerializedTemplate[] })
               >
                 <option value="checkbox">Checkbox</option>
                 <option value="counter">Counter (x/N)</option>
-                <option value="timer">Timer</option>
               </select>
             </label>
             {objectiveType === "counter" && (
@@ -99,18 +96,6 @@ export function MissionForms({ templates }: { templates: SerializedTemplate[] })
                   className={`${inputCls} w-20`}
                   value={targetCount}
                   onChange={(e) => setTargetCount(Number(e.target.value))}
-                />
-              </label>
-            )}
-            {objectiveType === "timer" && (
-              <label className="flex flex-col gap-1">
-                <span className="hud-label text-xs text-muted">Minutes</span>
-                <input
-                  type="number"
-                  min={5}
-                  className={`${inputCls} w-20`}
-                  value={durationMinutes}
-                  onChange={(e) => setDurationMinutes(Number(e.target.value))}
                 />
               </label>
             )}

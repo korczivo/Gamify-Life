@@ -23,20 +23,10 @@ export const DIFFICULTY: Record<
   hard: { cash: 50_000, rp: 400, tickWeight: 2 },
 };
 
-/** Heist preps pay small and flat — the money is in the finale. */
-export const PREP_PAYOUT = { cash: 5_000, rp: 30, tickWeight: 0.5 };
-
-/**
- * Verified-work premium: timer missions can't be faked (you have to sit
- * through them), so they pay extra — honesty is the optimal strategy.
- */
-export const TIMER_PREMIUM = 1.2;
-
 /**
  * Market saturation on hard missions (GTA-style cooldown economics):
  * spamming "hard" stops paying. First 2 hards a day pay full,
- * the next 2 pay half, anything beyond a quarter. Never applies to
- * heist preps (they pay flat anyway).
+ * the next 2 pay half, anything beyond a quarter.
  */
 export function hardSaturationMult(hardCompletedToday: number): number {
   if (hardCompletedToday < 2) return 1;
@@ -103,10 +93,57 @@ export const HEIST_TIERS: Record<
 export const HEIST_BUYIN_PCT = 0.1;
 export const OPTIONAL_PREP_BONUS = 0.1; // per completed optional prep
 export const ELITE_BONUS = 0.15;
+/** Legacy multiplier — hard mode is retired, kept for old heists' payout math. */
 export const HARD_MODE_MULT = 1.25;
-/** Starting a new heist within this window of the last finale = hard mode. */
-export const HARD_MODE_WINDOW_HOURS = 24;
 export const HEIST_RP_DIVISOR = 100; // rp = payout / 100
+
+/**
+ * Elite window scales with tier: bigger scores take more missions, so they
+ * get more days. (Elite also requires no day skipped — see checkElite.)
+ */
+export const ELITE_WINDOW_DAYS: Record<HeistTier, number> = {
+  small: 3,
+  medium: 7,
+  big: 10,
+  cayo: 14,
+};
+
+/**
+ * What fuels a heist prep. Preps are counters filled by completing regular
+ * missions — the heist is a meta-layer over the daily grind, like GTA preps
+ * were regular gameplay. "deepwork" counts timer missions of any type.
+ */
+export type PrepRequirement = BusinessType | "deepwork";
+
+export const PREP_REQUIREMENTS: { key: PrepRequirement; label: string }[] = [
+  { key: "marketing", label: "Marketing" },
+  { key: "content", label: "Content" },
+  { key: "dev", label: "Dev" },
+  { key: "admin", label: "Admin" },
+  { key: "deepwork", label: "Deep Work" },
+];
+
+export function prepRequirementLabel(key: string): string {
+  return PREP_REQUIREMENTS.find((r) => r.key === key)?.label ?? key;
+}
+
+/** "45m", "1h 30m" — preps and heist gates are measured in deep-work time. */
+export function formatMinutes(m: number): string {
+  const mins = Math.max(0, Math.round(m));
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const r = mins % 60;
+  return r ? `${h}h ${r}m` : `${h}h`;
+}
+
+/** Deep-work minutes the mandatory preps demand — the real time gate. */
+export function heistMandatoryMinutes(
+  preps: { kind: string; minutes?: number; target?: number }[]
+): number {
+  return preps
+    .filter((p) => p.kind === "mandatory")
+    .reduce((s, p) => s + (p.minutes ?? p.target ?? 0), 0);
+}
 
 export interface LootRoll {
   kind: string;
@@ -157,9 +194,104 @@ export function heistPayout(opts: {
   return Math.round(payout);
 }
 
+// ---------------------------------------------------------------- heist templates
+
+/**
+ * Predefined heists: an authentic GTA identity (name, art, prep flavor)
+ * wrapped around a real time investment. Preps are DEEP-WORK TIME BLOCKS —
+ * only timer missions (verified, sat-through work) fill them, so a heist
+ * can't run faster than the hours you actually put in. Checkboxes don't count:
+ * the big score is gated by time, the one resource you can't fake or spam.
+ */
+export interface HeistTemplatePrep {
+  /** Authentic GTA prep name, shown on the polaroid. */
+  flavor: string;
+  /** What the block stands for in real work (editable at start). */
+  task: string;
+  /** Deep-work minutes this segment demands. */
+  minutes: number;
+  kind: "mandatory" | "optional";
+}
+
+export interface HeistTemplateDef {
+  id: string;
+  name: string;
+  tier: HeistTier;
+  /** Which real-work playbook this heist packages. */
+  tagline: string;
+  finaleName: string;
+  preps: HeistTemplatePrep[];
+}
+
+export const HEIST_TEMPLATES: HeistTemplateDef[] = [
+  {
+    id: "fleeca-job",
+    name: "The Fleeca Job",
+    tier: "small",
+    tagline: "Quick sales raid — 90 min of focused outreach",
+    finaleName: "CLOSE THE LEADS",
+    preps: [
+      { flavor: "Scope Out", task: "Lead research", minutes: 45, kind: "mandatory" },
+      { flavor: "Kuruma", task: "Focused outreach block", minutes: 45, kind: "mandatory" },
+    ],
+  },
+  {
+    id: "prison-break",
+    name: "The Prison Break",
+    tier: "medium",
+    tagline: "Ship a YouTube video — ~4h, script to publish",
+    finaleName: "PUBLISH",
+    preps: [
+      { flavor: "Station", task: "Script writing", minutes: 90, kind: "mandatory" },
+      { flavor: "Plane", task: "Recording", minutes: 90, kind: "mandatory" },
+      { flavor: "Bus", task: "Editing", minutes: 60, kind: "mandatory" },
+    ],
+  },
+  {
+    id: "pacific-standard",
+    name: "The Pacific Standard Job",
+    tier: "medium",
+    tagline: "Content blitz — ~4h of SEO writing",
+    finaleName: "HIT PUBLISH ON EVERYTHING",
+    preps: [
+      { flavor: "Signal", task: "Keyword research", minutes: 60, kind: "mandatory" },
+      { flavor: "Vans", task: "SEO post #1", minutes: 90, kind: "mandatory" },
+      { flavor: "Hack", task: "SEO post #2", minutes: 90, kind: "mandatory" },
+    ],
+  },
+  {
+    id: "doomsday",
+    name: "The Doomsday Heist",
+    tier: "big",
+    tagline: "Launch week — ~8h of deep work",
+    finaleName: "LAUNCH DAY",
+    preps: [
+      { flavor: "Paramedic Equipment", task: "Landing page + launch post", minutes: 120, kind: "mandatory" },
+      { flavor: "Khanjali", task: "Final build + polish", minutes: 180, kind: "mandatory" },
+      { flavor: "Air Defenses", task: "Line up launch channels", minutes: 180, kind: "mandatory" },
+    ],
+  },
+  {
+    id: "cayo-perico",
+    name: "The Cayo Perico Heist",
+    tier: "cayo",
+    tagline: "Ship a feature — ~12h, zero to deploy",
+    finaleName: "DEPLOY",
+    preps: [
+      { flavor: "Gather Intel", task: "Spec + research", minutes: 180, kind: "mandatory" },
+      { flavor: "Approach Vehicle", task: "Build it", minutes: 300, kind: "mandatory" },
+      { flavor: "Equipment", task: "Tests + bug fixes", minutes: 240, kind: "mandatory" },
+    ],
+  },
+];
+
+export function heistTemplateById(id: string): HeistTemplateDef | undefined {
+  return HEIST_TEMPLATES.find((t) => t.id === id);
+}
+
 // ---------------------------------------------------------------- catalog
 
-export type AssetClass = "business" | "property" | "vehicle" | "gear";
+export type AssetClass = "business" | "property" | "gear";
 
 export interface UpgradeDef {
   id: string;
@@ -188,42 +320,12 @@ export interface AssetDef {
   requiresBusinessCount?: number;
 
   // property
-  garageSlots?: number;
-  aircraftSlots?: number;
   unlocks?: string; // human-readable unlock line
 
-  // vehicle
-  vehicleClass?:
-    | "Motorcycles"
-    | "Sports"
-    | "Super"
-    | "Sports Classics"
-    | "Muscle"
-    | "Sedans"
-    | "Off-Road"
-    | "Aircraft";
-
-  // wardrobe/vehicle card display
+  // wardrobe card display
   emoji?: string;
 
   upgrades?: UpgradeDef[];
-}
-
-function tuningSlots(price: number): UpgradeDef[] {
-  const pct = (p: number, label: string, effect: string): UpgradeDef => ({
-    id: label.toLowerCase().replace(/\s+/g, "-"),
-    name: label,
-    price: Math.round((price * p) / 500) * 500,
-    effect,
-  });
-  return [
-    pct(0.12, "Engine EMS Level 4", "Top-end power"),
-    pct(0.15, "Turbo Tuning", "Forced induction"),
-    pct(0.1, "Race Transmission", "Faster shifts"),
-    pct(0.08, "Race Brakes", "Late braking"),
-    pct(0.08, "Custom Wheels", "Style points"),
-    pct(0.04, "Respray", "Fresh paint"),
-  ];
 }
 
 export const ASSET_CATALOG: AssetDef[] = [
@@ -316,34 +418,13 @@ export const ASSET_CATALOG: AssetDef[] = [
 
   // ---------------- properties
   {
-    id: "low-end-apartment",
-    name: "0184 Milton Road",
-    tagline: "Low-end apartment · a roof over your head",
-    class: "property",
-    price: 87_000,
-    garageSlots: 2,
-    unlocks: "2 garage slots",
-    map: { x: 4250, y: 6850, blip: "safehouse" },
-  },
-  {
-    id: "ten-car-garage",
-    name: "Unit 2 Popular St",
-    tagline: "10-car garage · room to grow",
-    class: "property",
-    price: 150_000,
-    garageSlots: 10,
-    unlocks: "10 garage slots",
-    map: { x: 4550, y: 6550, blip: "garage" },
-  },
-  {
     id: "eclipse-towers",
     name: "Eclipse Towers, Apt 31",
     tagline: "High-end living in West Vinewood",
     class: "property",
     price: 400_000,
     requiredRank: 5,
-    garageSlots: 10,
-    unlocks: "Heist tier: Heist ($500k) + 10 garage slots",
+    unlocks: "Heist tier: Heist ($500k)",
     map: { x: 3720, y: 5880, blip: "safehouse" },
   },
   {
@@ -383,25 +464,13 @@ export const ASSET_CATALOG: AssetDef[] = [
     class: "property",
     price: 1_500_000,
     requiredRank: 12,
-    garageSlots: 10,
-    unlocks: "10 garage slots + pure flex",
+    unlocks: "Pure flex over the Strip",
     map: { x: 4880, y: 5560, blip: "casino" },
     upgrades: [
       { id: "spa", name: "Spa Room", price: 245_000, effect: "Private spa" },
       { id: "cinema", name: "Media Room", price: 500_000, effect: "Private cinema" },
       { id: "bar", name: "Bar & Party Hub", price: 385_000, effect: "In-house bar" },
     ],
-  },
-  {
-    id: "lsia-hangar",
-    name: "LSIA Hangar A17",
-    tagline: "Aircraft storage at the airport",
-    class: "property",
-    price: 1_525_000,
-    requiredRank: 14,
-    aircraftSlots: 5,
-    unlocks: "5 aircraft slots",
-    map: { x: 3850, y: 7350, blip: "hangar" },
   },
   {
     id: "maze-bank-tower",
@@ -427,36 +496,6 @@ export const ASSET_CATALOG: AssetDef[] = [
       { id: "aquarius", name: "Aquarius Model", price: 1_000_000, effect: "Tier 3 yacht" },
     ],
   },
-
-  // ---------------- vehicles (real GTA$ prices)
-  { id: "faggio", name: "Pegassi Faggio", tagline: "Everyone starts somewhere", class: "vehicle", price: 4_000, vehicleClass: "Motorcycles", upgrades: tuningSlots(4_000) },
-  { id: "sanchez", name: "Maibatsu Sanchez", tagline: "Dirt-cheap dirt bike", class: "vehicle", price: 8_000, vehicleClass: "Motorcycles", upgrades: tuningSlots(8_000) },
-  { id: "akuma", name: "Dinka Akuma", tagline: "Pocket rocket", class: "vehicle", price: 9_000, vehicleClass: "Motorcycles", upgrades: tuningSlots(9_000) },
-  { id: "bati-801", name: "Pegassi Bati 801", tagline: "The people's superbike", class: "vehicle", price: 15_000, vehicleClass: "Motorcycles", upgrades: tuningSlots(15_000) },
-  { id: "gauntlet", name: "Bravado Gauntlet", tagline: "American muscle", class: "vehicle", price: 32_000, vehicleClass: "Muscle", upgrades: tuningSlots(32_000) },
-  { id: "dominator", name: "Vapid Dominator", tagline: "Pony car with anger issues", class: "vehicle", price: 35_000, vehicleClass: "Muscle", upgrades: tuningSlots(35_000) },
-  { id: "elegy-rh8", name: "Annis Elegy RH8", tagline: "The drift king", class: "vehicle", price: 95_000, vehicleClass: "Sports", upgrades: tuningSlots(95_000) },
-  { id: "comet", name: "Pfister Comet", tagline: "Timeless silhouette", class: "vehicle", price: 100_000, vehicleClass: "Sports", upgrades: tuningSlots(100_000) },
-  { id: "banshee", name: "Bravado Banshee", tagline: "A classic screamer", class: "vehicle", price: 105_000, vehicleClass: "Sports", upgrades: tuningSlots(105_000) },
-  { id: "9f", name: "Obey 9F", tagline: "German precision", class: "vehicle", price: 120_000, vehicleClass: "Sports", upgrades: tuningSlots(120_000) },
-  { id: "feltzer", name: "Benefactor Feltzer", tagline: "Executive sports", class: "vehicle", price: 145_000, vehicleClass: "Sports", upgrades: tuningSlots(145_000) },
-  { id: "voltic", name: "Coil Voltic", tagline: "Silent but violent", class: "vehicle", price: 150_000, vehicleClass: "Super", upgrades: tuningSlots(150_000) },
-  { id: "bullet", name: "Vapid Bullet", tagline: "Le Mans legend", class: "vehicle", price: 155_000, vehicleClass: "Super", upgrades: tuningSlots(155_000) },
-  { id: "carbonizzare", name: "Grotti Carbonizzare", tagline: "Italian heat", class: "vehicle", price: 195_000, vehicleClass: "Sports", upgrades: tuningSlots(195_000) },
-  { id: "monroe", name: "Pegassi Monroe", tagline: "60s pin-up", class: "vehicle", price: 490_000, vehicleClass: "Sports Classics", upgrades: tuningSlots(490_000) },
-  { id: "stinger", name: "Grotti Stinger", tagline: "Vintage class", class: "vehicle", price: 850_000, vehicleClass: "Sports Classics", upgrades: tuningSlots(850_000) },
-  { id: "infernus", name: "Pegassi Infernus", tagline: "The poster car", class: "vehicle", price: 440_000, vehicleClass: "Super", upgrades: tuningSlots(440_000) },
-  { id: "turismo-r", name: "Grotti Turismo R", tagline: "Hybrid hypercar", class: "vehicle", price: 500_000, vehicleClass: "Super", upgrades: tuningSlots(500_000) },
-  { id: "cheetah", name: "Grotti Cheetah", tagline: "Old money speed", class: "vehicle", price: 650_000, vehicleClass: "Super", upgrades: tuningSlots(650_000) },
-  { id: "zentorno", name: "Pegassi Zentorno", tagline: "The one from the posters", class: "vehicle", price: 725_000, vehicleClass: "Super", requiredRank: 8, upgrades: tuningSlots(725_000) },
-  { id: "entity-xf", name: "Overflod Entity XF", tagline: "Swedish lightning", class: "vehicle", price: 795_000, vehicleClass: "Super", requiredRank: 8, upgrades: tuningSlots(795_000) },
-  { id: "adder", name: "Truffade Adder", tagline: "The original million-dollar car", class: "vehicle", price: 1_000_000, vehicleClass: "Super", requiredRank: 10, upgrades: tuningSlots(1_000_000) },
-  { id: "osiris", name: "Pegassi Osiris", tagline: "Egyptian god of speed", class: "vehicle", price: 1_950_000, vehicleClass: "Super", requiredRank: 14, upgrades: tuningSlots(1_950_000) },
-  { id: "t20", name: "Progen T20", tagline: "Hybrid perfection", class: "vehicle", price: 2_200_000, vehicleClass: "Super", requiredRank: 16, upgrades: tuningSlots(2_200_000) },
-  { id: "x80-proto", name: "Grotti X80 Proto", tagline: "Concept made real", class: "vehicle", price: 2_700_000, vehicleClass: "Super", requiredRank: 20, upgrades: tuningSlots(2_700_000) },
-  { id: "frogger", name: "Maibatsu Frogger", tagline: "Your first set of wings", class: "vehicle", price: 1_300_000, vehicleClass: "Aircraft", requiredRank: 14, upgrades: tuningSlots(1_300_000) },
-  { id: "luxor", name: "Buckingham Luxor", tagline: "Private jet money", class: "vehicle", price: 1_625_000, vehicleClass: "Aircraft", requiredRank: 16, upgrades: tuningSlots(1_625_000) },
-  { id: "buzzard", name: "Buzzard Attack Chopper", tagline: "The CEO's best friend", class: "vehicle", price: 1_750_000, vehicleClass: "Aircraft", requiredRank: 18, upgrades: tuningSlots(1_750_000) },
 
   // ---------------- wardrobe (pure flex — buffs come from SKILLS, earned by work)
   { id: "perseus-gloves", name: "Perseus Leather Gloves", tagline: "Details matter", class: "gear", price: 30_000, emoji: "🧤" },

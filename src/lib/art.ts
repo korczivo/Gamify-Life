@@ -6,7 +6,7 @@ import { join } from "node:path";
  * Art lives under public/assets/ (fetched by scripts/fetch-assets.ts,
  * gitignored — Rockstar IP, private use).
  */
-const CANDIDATE_DIRS = ["assets/properties", "assets/vehicles", "assets/gear"];
+const CANDIDATE_DIRS = ["assets/properties", "assets/gear", "assets/heists"];
 
 const cache = new Map<string, string | null>();
 

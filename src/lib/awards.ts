@@ -28,7 +28,6 @@ export const AWARDS: AwardDef[] = [
   { id: "mastermind", name: "Mastermind", description: "Heists completed", thresholds: [1, 5, 15, 40], format: "count" },
   { id: "elite-thief", name: "Elite Thief", description: "Elite Challenges", thresholds: [1, 3, 10, 25], format: "count" },
   { id: "empire-builder", name: "Empire Builder", description: "Businesses & properties owned", thresholds: [1, 4, 8, 14], format: "count" },
-  { id: "collector", name: "The Collector", description: "Vehicles in the garage", thresholds: [1, 5, 15, 28], format: "count" },
   { id: "millionaires-club", name: "Millionaire's Club", description: "Net worth", thresholds: [100_000, 1_000_000, 10_000_000, 50_000_000], format: "cash" },
   { id: "rainmaker", name: "Rainmaker", description: "Total cash earned", thresholds: [250_000, 1_000_000, 5_000_000, 20_000_000], format: "cash" },
   { id: "salesman", name: "The Salesman", description: "Stock sales closed", thresholds: [3, 10, 40, 100], format: "count" },
@@ -41,7 +40,6 @@ export interface AwardMetrics {
   mastermind: number;
   "elite-thief": number;
   "empire-builder": number;
-  collector: number;
   "millionaires-club": number;
   rainmaker: number;
   salesman: number;
