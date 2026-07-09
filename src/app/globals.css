@@ -160,3 +160,67 @@ body {
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* Story mode mission blips */
+.story-blip-wrap {
+  background: none;
+  border: none;
+}
+
+.story-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-hud), sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  color: #0b0e11;
+  background: var(--c, #9aa4af);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.75);
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.story-badge.done {
+  background: #e8b71a;
+  color: #0b0e11;
+}
+
+.story-badge.locked {
+  background: #333a42;
+  color: #8b949e;
+  border-color: #4a525c;
+  font-size: 11px;
+}
+
+.story-badge.current {
+  animation: story-pulse 1.8s ease-out infinite;
+}
+
+.story-badge.hovered {
+  transform: scale(1.18);
+}
+
+.story-badge.selected {
+  transform: scale(1.32);
+  border-color: #fff;
+  box-shadow: 0 0 0 4px rgba(232, 183, 26, 0.55), 0 2px 8px rgba(0, 0, 0, 0.85);
+  z-index: 1000;
+}
+
+@keyframes story-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 11px rgba(255, 255, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
